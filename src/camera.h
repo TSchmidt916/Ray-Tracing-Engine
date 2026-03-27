@@ -26,6 +26,13 @@ class camera {
 
     virtual ray generateRay(float i, float j, ray &R) = 0;
 
+    vec3 getU() const { return U; }
+    vec3 getV() const { return V; }
+    vec3 getW() const { return W; }
+    vec3 getPos() const { return pos; }
+
+    void setPos(const vec3& newPos) { pos = newPos; }
+
     protected:
     vec3 pos, dir;
     vec3 U, V, W;

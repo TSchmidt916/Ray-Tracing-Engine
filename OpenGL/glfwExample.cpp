@@ -10,6 +10,9 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 
+#include "../src/perspectiveCamera.h"
+#include "../src/vec3.h"
+
 #include "GLSL.h"
 
 int CheckGLErrors(const char *s)
@@ -35,7 +38,7 @@ int main(void)
     int winWidth = 1000;
     float aspectRatio = 1.0; // 16.0 / 9.0; // winWidth / (float)winHeight;
     int winHeight = winWidth / aspectRatio;
-    
+
     GLFWwindow* window = glfwCreateWindow(winWidth, winHeight, "GLFW Example", NULL, NULL);
     if (!window) {
         std::cerr << "GLFW did not create a window!" << std::endl;
@@ -72,7 +75,19 @@ int main(void)
     //
     // The ortho parameters, in order: left, right, bottom, top, zNear, zFar
     float halfWidth = 15.0 / 2.0;
-    float halfHeight = halfWidth / aspectRatio;
+    float halfHeight = halfWidth;
+
+    float left = -halfWidth;
+    float right = halfWidth;
+
+    float bottom = -halfHeight;
+    float top = halfHeight;
+
+    float near = 5.0f;
+    float far = -5.0f;
+
+    glm::mat4 M_ortho = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far);
+    glm::mat4 M_perspective = glm::perspective(3.14159f/4.0f, 1.0f, 0.1f, 100.0f);
     glm::mat4 projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0f, 10.0f);
 
     GLint major_version;
@@ -91,9 +106,9 @@ int main(void)
     // the GPU memory                                                                                       
     std::vector< float > host_VertexBuffer{ 
         //position              //color
-        -0.5f, -0.5f, 0.0f,     0.5f, 0.0f, 0.5f, //v0 Purple                           
-        0.5f, -0.5f, 0.0f,      1.0f, 1.0f, 1.0f, //v1 White                               
-        0.0f, 0.5f, 0.0f,       0.0f, 1.0f, 0.6f, //v2 Green-Blue
+        -3.0f, -3.0f, 0.0f,     0.5f, 0.0f, 0.5f, //v0 Purple                           
+        3.0f, -3.0f, 0.0f,      1.0f, 1.0f, 1.0f, //v1 White                               
+        0.0f, 3.0f, 0.0f,       0.0f, 1.0f, 0.6f, //v2 Green-Blue
     };                              
 
     int numBytes = host_VertexBuffer.size() * sizeof(float);
@@ -123,11 +138,26 @@ int main(void)
     glBindVertexArray(0);
 
     // Create a shader using my GLSLObject class                                                            
-    shader.addShader( "vertexShader_color.glsl", sivelab::GLSLObject::VERTEX_SHADER );
+    shader.addShader( "vertexShader_withMatrixTransformation.glsl", sivelab::GLSLObject::VERTEX_SHADER );
     shader.addShader( "fragmentShader_color.glsl", sivelab::GLSLObject::FRAGMENT_SHADER );
     shader.createProgram();
+    GLuint projMatrixID, viewMatrixID, modelMatrixID;
+    projMatrixID = shader.createUniform("projMatrix");
+    viewMatrixID = shader.createUniform("viewMatrix");
+    modelMatrixID = shader.createUniform("modelMatrix");
+
+    glm::mat4 modelTransform = glm::mat4(1.0);
+    float rot = 0;
+    modelTransform = glm::rotate(modelTransform, rot, glm::vec3(0,1,0));
+
+    //glm::vec3 m_pos(0,0,0), m_viewDir(0,0,-1);
+    //glm::vec3 m_U(1,0,0), m_V(0,1,0), m_W(0,0,1);
+
+    perspectiveCamera cam(winWidth, winHeight, vec3(0, 0, 5), vec3(0, 0, -1), 1.0f, 10.0f, 10.0f);
 
     double timeDiff = 0.0, startFrameTime = 0.0, endFrameTime = 0.0;
+
+    float rotAngle = 0;
     
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
@@ -140,11 +170,34 @@ int main(void)
         // background color)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // create the view matrix from our camera data                                                                                                   
+        //glm::mat4 M_view = glm::lookAt( m_pos, m_pos - m_W, m_V );
+        vec3 p = cam.getPos();
+        vec3 u = cam.getU();
+        vec3 v = cam.getV();
+        vec3 w = cam.getW();
+        glm::vec3 camPos(p.x(), p.y(), p.z());
+        glm::vec3 camU(u.x(), u.y(), u.z());
+        glm::vec3 camV(v.x(), v.y(), v.z());
+        glm::vec3 camW(w.x(), w.y(), w.z());
+        glm::mat4 M_view = glm::lookAt(camPos, camPos - camW, camV);
+
         /* Render your objects here */
         shader.activate();
+
+        modelTransform = glm::mat4(1.0f);
+        modelTransform = glm::rotate(modelTransform, rotAngle, glm::vec3(0,1,0));
+        rotAngle += 0.05;
+        if (rotAngle > 2.0*3.14159) rotAngle = 0.0f;
+
+        glUniformMatrix4fv(projMatrixID, 1, GL_FALSE, glm::value_ptr( M_perspective ));
+        glUniformMatrix4fv(viewMatrixID, 1, GL_FALSE, glm::value_ptr( M_view )); 
+        glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, glm::value_ptr( modelTransform ));
+
         glBindVertexArray(m_VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
+
         shader.deactivate();
 
         // Swap the front and back buffers
@@ -152,6 +205,25 @@ int main(void)
 
         /* Poll for and process events */
         glfwPollEvents();
+
+        float moveRatePerFrame = 0.05;
+
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() + -cam.getW() * moveRatePerFrame);
+        }
+        else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() - cam.getU() * moveRatePerFrame);
+        }
+        else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() + cam.getW() * moveRatePerFrame);
+        }
+        else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() + cam.getU() * moveRatePerFrame);
+        }
+
+        if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+            std::cout << "fps: " << 1.0 / timeDiff << std::endl;
+        }
 
         if (glfwGetKey( window, GLFW_KEY_T ) == GLFW_PRESS) {
             std::cout << "fps: " << 1.0/timeDiff << std::endl;
