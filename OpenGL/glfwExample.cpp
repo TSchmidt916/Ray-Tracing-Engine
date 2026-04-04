@@ -64,7 +64,7 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.5, 0.5, 0.5, 1.0);
+    glClearColor(0.0, 0.0, 0.0, 1.0);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
@@ -105,10 +105,10 @@ int main(void)
     // this is the actual triangle data that will be copied to                                              
     // the GPU memory                                                                                       
     std::vector< float > host_VertexBuffer{ 
-        //position              //color
-        -3.0f, -3.0f, 0.0f,     0.5f, 0.0f, 0.5f, //v0 Purple                           
-        3.0f, -3.0f, 0.0f,      1.0f, 1.0f, 1.0f, //v1 White                               
-        0.0f, 3.0f, 0.0f,       0.0f, 1.0f, 0.6f, //v2 Green-Blue
+        //position              //normals
+        -3.0f, -3.0f, 0.0f,     0.0f, 0.0f, 1.0f,                     
+        3.0f, -3.0f, 0.0f,      0.0f, 0.0f, 1.0f,                              
+        0.0f, 3.0f, 0.0f,       0.0f, 0.0f, 1.0f,
     };                              
 
     int numBytes = host_VertexBuffer.size() * sizeof(float);
@@ -138,14 +138,30 @@ int main(void)
     glBindVertexArray(0);
 
     // Create a shader using my GLSLObject class                                                            
-    shader.addShader( "vertexShader_withMatrixTransformation.glsl", sivelab::GLSLObject::VERTEX_SHADER );
-    shader.addShader( "fragmentShader_color.glsl", sivelab::GLSLObject::FRAGMENT_SHADER );
+    shader.addShader( "vertexShader_PrepForPerFragment.glsl", sivelab::GLSLObject::VERTEX_SHADER );
+    shader.addShader( "fragmentShader_Lambertian.glsl", sivelab::GLSLObject::FRAGMENT_SHADER );
     shader.createProgram();
-    GLuint projMatrixID, viewMatrixID, modelMatrixID;
+    GLuint projMatrixID, viewMatrixID, modelMatrixID, normalMatrixID;
     projMatrixID = shader.createUniform("projMatrix");
     viewMatrixID = shader.createUniform("viewMatrix");
     modelMatrixID = shader.createUniform("modelMatrix");
+    normalMatrixID = shader.createUniform("normalMatrix");
 
+    GLuint diffuseComponentID, lightPosWorldID, IaID, kaID, kdID, ksID, phongExpID, lightPosID, lightIntensityID;
+    diffuseComponentID = shader.createUniform("diffuseComponent");
+    lightPosWorldID = shader.createUniform("lightPosWorld");
+    IaID = shader.createUniform("Ia");
+    kaID = shader.createUniform("ka");
+    kdID = shader.createUniform("kd");
+    ksID = shader.createUniform("ks");
+    phongExpID = shader.createUniform("phongExp");
+    lightPosID = shader.createUniform("light.position");
+    lightIntensityID = shader.createUniform("light.intensity");
+
+    glm::vec3 diffuseComponent(1.0f, 0.0f, 0.5f);
+    glm::vec4 lightPosWorld(0.0f, 0.0f, 5.0f, 1.0f);
+
+    glm::mat4 modelNormal = glm::mat4(1.0);
     glm::mat4 modelTransform = glm::mat4(1.0);
     float rot = 0;
     modelTransform = glm::rotate(modelTransform, rot, glm::vec3(0,1,0));
@@ -187,12 +203,26 @@ int main(void)
 
         modelTransform = glm::mat4(1.0f);
         modelTransform = glm::rotate(modelTransform, rotAngle, glm::vec3(0,1,0));
-        rotAngle += 0.05;
+        rotAngle += 0.01;
         if (rotAngle > 2.0*3.14159) rotAngle = 0.0f;
+
+        modelNormal = glm::transpose(glm::inverse(modelTransform));
 
         glUniformMatrix4fv(projMatrixID, 1, GL_FALSE, glm::value_ptr( M_perspective ));
         glUniformMatrix4fv(viewMatrixID, 1, GL_FALSE, glm::value_ptr( M_view )); 
         glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, glm::value_ptr( modelTransform ));
+        glUniformMatrix4fv(normalMatrixID, 1, GL_FALSE, glm::value_ptr( modelNormal ));
+
+        glUniform3fv(diffuseComponentID, 1, glm::value_ptr( diffuseComponent ));
+        glUniform4fv(lightPosWorldID, 1, glm::value_ptr( lightPosWorld ));
+
+        glUniform3f(IaID, 0.2f, 0.2f, 0.2f);
+        glUniform3f(kaID, 1.0f, 1.0f, 1.0f);
+        glUniform3f(kdID, 1.0f, 0.0f, 0.5f);
+        glUniform3f(ksID, 1.0f, 1.0f, 1.0f);
+        glUniform1f(phongExpID, 32.0f);
+        glUniform3f(lightPosID, 0.0f, 0.0f, 10.0f);
+        glUniform3f(lightIntensityID, 1.0f, 1.0f, 1.0f);
 
         glBindVertexArray(m_VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
