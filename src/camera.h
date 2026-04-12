@@ -33,6 +33,11 @@ class camera {
 
     void setPos(const vec3& newPos) { pos = newPos; }
 
+    void setDir(const vec3& newDir) {
+        dir = newDir;
+        normalizeDir();
+    }
+
     protected:
     vec3 pos, dir;
     vec3 U, V, W;

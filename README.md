@@ -138,3 +138,24 @@ this will output an image with a normal, Blinn Phong, Lambertian, and mirror sph
 
 other examples are commented out in fbMain.cpp but the pngs they generate are all in buildVCPkg/src/Debug
 
+### To run glfwExample.cpp
+build the project(should build automatically when opening) or cd into starterCode/buildVCPkg and run "cmake --build ."
+
+cd into starterCode\buildVCPkg\OpenGL
+
+run ./glfwExample.exe
+
+to move the camera use:
+W: move forward
+A: move left
+S: move backwards
+D: move right
+
+move mouse to rotate camera
+
+B: switch to Blinn Phong shaders
+L: switch to Lambertian shaders
+
+### Visual Differences
+There are various the ray tracer and OpenGL.
+one of the main ones being that OpenGL currently does not create any shadows.Depending on the sphere you create in OpenGL you can see the triangle faces close up which is not present in the ray tracer. OpenGL is also real time meaning you can move around and see real time transformations where as the ray tracer is static. The colors are relatively the same but may be a little different depending on how the values are being computed.

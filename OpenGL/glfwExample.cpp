@@ -14,6 +14,68 @@
 #include "../src/vec3.h"
 
 #include "GLSL.h"
+#include "mouseControls.cpp"
+#include "../src/model_obj.h"
+
+//sphere stuff that should be moved
+struct SphereVertex {
+    float position[3];
+    float normal[3];
+};
+
+std::vector<SphereVertex> sphereVerts;
+std::vector<unsigned int> sphereIndices;
+
+void generateSphere(float radius, int stacks, int slices) {
+    sphereVerts.clear();
+    sphereIndices.clear();
+
+    for (int i = 0; i <= stacks; i++) {
+        float phi = M_PI * i / stacks;
+        for (int j = 0; j <= slices; j++) {
+            float theta = 2.0f * M_PI * j / slices;
+
+            SphereVertex v;
+            v.position[0] = radius * sin(phi) * cos(theta);
+            v.position[1] = radius * cos(phi);
+            v.position[2] = radius * sin(phi) * sin(theta);
+            v.normal[0] = sin(phi) * cos(theta);
+            v.normal[1] = cos(phi);
+            v.normal[2] = sin(phi) * sin(theta);
+            sphereVerts.push_back(v);
+        }
+    }
+
+    for (int i = 0; i < stacks; i++) {
+        for (int j = 0; j < slices; j++) {
+            int top_left = i * (slices + 1) + j;
+            int top_right = top_left + 1;
+            int bottom_left = top_left + (slices + 1);
+            int bottom_right = bottom_left + 1;
+
+            sphereIndices.push_back(top_left);
+            sphereIndices.push_back(bottom_left);
+            sphereIndices.push_back(top_right);
+
+            sphereIndices.push_back(top_right);
+            sphereIndices.push_back(bottom_left);
+            sphereIndices.push_back(bottom_right);
+        }
+    }
+}
+
+void setUniforms(
+    sivelab::GLSLObject& shader,
+    const glm::mat4& proj,
+    const glm::mat4& view,
+    const glm::mat4& model,
+    const glm::mat4& normal)
+{
+    glUniformMatrix4fv(shader.createUniform("projMatrix"), 1, GL_FALSE, glm::value_ptr(proj));
+    glUniformMatrix4fv(shader.createUniform("viewMatrix"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(shader.createUniform("modelMatrix"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(shader.createUniform("normalMatrix"), 1, GL_FALSE, glm::value_ptr(normal));
+}
 
 int CheckGLErrors(const char *s)
 {
@@ -64,15 +126,14 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClearColor(0.5f, 0.5f, 0.5f, 1.0);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
     glViewport(0, 0, fb_width, fb_height);
 
-    // Need to set a projection matrix that fits the aspect ratio set
-    // by the window frame.
-    //
+    glm::mat4 M_perspective = glm::perspective(glm::radians(45.0f), (float)winWidth / (float)winHeight, 0.1f, 100.0f);
+
     // The ortho parameters, in order: left, right, bottom, top, zNear, zFar
     float halfWidth = 15.0 / 2.0;
     float halfHeight = halfWidth;
@@ -87,94 +148,109 @@ int main(void)
     float far = -5.0f;
 
     glm::mat4 M_ortho = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far);
-    glm::mat4 M_perspective = glm::perspective(3.14159f/4.0f, 1.0f, 0.1f, 100.0f);
     glm::mat4 projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0f, 10.0f);
 
-    GLint major_version;
-    glGetIntegerv(GL_MAJOR_VERSION, &major_version);
-    std::cout << "GL_MAJOR_VERSION: " << major_version << std::endl;
+    //obj model
+    ModelOBJ model;
+    if (!model.import("../OBJs/Madara_Uchiha.obj")) {
+        std::cerr << "Failed to load OBJ file!" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
 
-    //initialize all my data and get it on the GPU(load scene file, get shapes, etc.)
-    GLuint m_triangleVBO[1], m_VAO;
-    sivelab::GLSLObject shader;
+    model.normalize();
 
-    // create a Vertex Array Buffer to hold our triangle data                                               
-    glGenBuffers(1, m_triangleVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, m_triangleVBO[0]);
+    GLuint objVBO, objIBO, objVAO;
+    glGenVertexArrays(1, &objVAO);
+    glBindVertexArray(objVAO);
 
-    // this is the actual triangle data that will be copied to                                              
-    // the GPU memory                                                                                       
-    std::vector< float > host_VertexBuffer{ 
-        //position              //normals
-        -3.0f, -3.0f, 0.0f,     0.0f, 0.0f, 1.0f,                     
-        3.0f, -3.0f, 0.0f,      0.0f, 0.0f, 1.0f,                              
-        0.0f, 3.0f, 0.0f,       0.0f, 0.0f, 1.0f,
-    };                              
+    glGenBuffers(1, &objVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, objVBO);
+    glBufferData(GL_ARRAY_BUFFER, model.getNumberOfVertices() * model.getVertexSize(), model.getVertexBuffer(), GL_STATIC_DRAW);
 
-    int numBytes = host_VertexBuffer.size() * sizeof(float);
+    glGenBuffers(1, &objIBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, objIBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, model.getNumberOfIndices() * sizeof(int), model.getIndexBuffer(), GL_STATIC_DRAW);
 
-    // copy the numBytes from host_VertexBuffer t the GPU and store in                                      
-    // the currently bound VBO                                                                              
-    glBufferData(GL_ARRAY_BUFFER, numBytes, host_VertexBuffer.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    int objStride = model.getVertexSize();
 
-    // once copied, we no longer need the data on the host                                                  
-    host_VertexBuffer.clear();
-
-    // create a vertex array object that will map the attributes in                                         
-    // our vertex buffer to different location attributes for our                                           
-    // shaders                                                                                              
-    glGenVertexArrays(1, &m_VAO);
-    glBindVertexArray(m_VAO);
-
-    // VAO details here - we only have 1 attribute or location                                              
-    // (Position of the vertex)                                                                             
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, m_triangleVBO[0]);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, objStride, (void*)offsetof(ModelOBJ::Vertex, position));
+    //normal
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, objStride, (void*)offsetof(ModelOBJ::Vertex, normal));
+    //texcoords
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, objStride, (void*)offsetof(ModelOBJ::Vertex, texCoord));
+
     glBindVertexArray(0);
 
-    // Create a shader using my GLSLObject class                                                            
-    shader.addShader( "vertexShader_PrepForPerFragment.glsl", sivelab::GLSLObject::VERTEX_SHADER );
-    shader.addShader( "fragmentShader_Lambertian.glsl", sivelab::GLSLObject::FRAGMENT_SHADER );
-    shader.createProgram();
-    GLuint projMatrixID, viewMatrixID, modelMatrixID, normalMatrixID;
-    projMatrixID = shader.createUniform("projMatrix");
-    viewMatrixID = shader.createUniform("viewMatrix");
-    modelMatrixID = shader.createUniform("modelMatrix");
-    normalMatrixID = shader.createUniform("normalMatrix");
+    //sphere generation
+    generateSphere(1.0f, 32, 32);
 
-    GLuint diffuseComponentID, lightPosWorldID, IaID, kaID, kdID, ksID, phongExpID, lightPosID, lightIntensityID;
-    diffuseComponentID = shader.createUniform("diffuseComponent");
-    lightPosWorldID = shader.createUniform("lightPosWorld");
-    IaID = shader.createUniform("Ia");
-    kaID = shader.createUniform("ka");
-    kdID = shader.createUniform("kd");
-    ksID = shader.createUniform("ks");
-    phongExpID = shader.createUniform("phongExp");
-    lightPosID = shader.createUniform("light.position");
-    lightIntensityID = shader.createUniform("light.intensity");
+    GLuint sphereVBO, sphereIBO, sphereVAO;
+    glGenVertexArrays(1, &sphereVAO);
+    glBindVertexArray(sphereVAO);
 
-    glm::vec3 diffuseComponent(1.0f, 0.0f, 0.5f);
-    glm::vec4 lightPosWorld(0.0f, 0.0f, 5.0f, 1.0f);
+    glGenBuffers(1, &sphereVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVBO);
+    glBufferData(GL_ARRAY_BUFFER, sphereVerts.size() * sizeof(SphereVertex), sphereVerts.data(), GL_STATIC_DRAW);
 
-    glm::mat4 modelNormal = glm::mat4(1.0);
-    glm::mat4 modelTransform = glm::mat4(1.0);
-    float rot = 0;
-    modelTransform = glm::rotate(modelTransform, rot, glm::vec3(0,1,0));
+    glGenBuffers(1, &sphereIBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereIBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereIndices.size() * sizeof(unsigned int), sphereIndices.data(), GL_STATIC_DRAW);
+    
+    int sphereStride = sizeof(SphereVertex);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sphereStride, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sphereStride, (void*)12);
 
-    //glm::vec3 m_pos(0,0,0), m_viewDir(0,0,-1);
-    //glm::vec3 m_U(1,0,0), m_V(0,1,0), m_W(0,0,1);
+    glBindVertexArray(0);
+
+    //shaders
+    sivelab::GLSLObject shaderLambertian, shaderBlinnPhong;
+
+    shaderLambertian.addShader("vertexShader_PrepForPerFragment.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    shaderLambertian.addShader("fragmentShader_Lambertian.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    shaderLambertian.createProgram();
+
+    shaderBlinnPhong.addShader("vertexShader_blinnPhong.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    shaderBlinnPhong.addShader("fragmentShader_blinnPhong.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    shaderBlinnPhong.createProgram();
+
+    GLuint lamb_proj = shaderLambertian.createUniform("projMatrix");
+    GLuint lamb_view = shaderLambertian.createUniform("viewMatrix");
+    GLuint lamb_model = shaderLambertian.createUniform("modelMatrix");
+    GLuint lamb_normal = shaderLambertian.createUniform("normalMatrix");
+    GLuint lamb_lpos = shaderLambertian.createUniform("lightPosWorld");
+    GLuint lamb_Ia = shaderLambertian.createUniform("Ia");
+    GLuint lamb_kd = shaderLambertian.createUniform("kd");
+    GLuint lamb_lint = shaderLambertian.createUniform("lightIntensity");
+
+    GLuint bp_proj = shaderBlinnPhong.createUniform("projMatrix");
+    GLuint bp_view = shaderBlinnPhong.createUniform("viewMatrix");
+    GLuint bp_model = shaderBlinnPhong.createUniform("modelMatrix");
+    GLuint bp_normal = shaderBlinnPhong.createUniform("normalMatrix");
+    GLuint bp_Ia = shaderBlinnPhong.createUniform("Ia");
+    GLuint bp_ka = shaderBlinnPhong.createUniform("ka");
+    GLuint bp_kd = shaderBlinnPhong.createUniform("kd");
+    GLuint bp_ks = shaderBlinnPhong.createUniform("ks");
+    GLuint bp_phong = shaderBlinnPhong.createUniform("phongExp");
+    GLuint bp_lpos = shaderBlinnPhong.createUniform("light.position");
+    GLuint bp_lint = shaderBlinnPhong.createUniform("light.intensity");
 
     perspectiveCamera cam(winWidth, winHeight, vec3(0, 0, 5), vec3(0, 0, -1), 1.0f, 10.0f, 10.0f);
 
-    double timeDiff = 0.0, startFrameTime = 0.0, endFrameTime = 0.0;
+    Mouse cameraRotation;
+    glfwSetWindowUserPointer(window, &cameraRotation);
+    glfwSetCursorPosCallback(window, Mouse::callback);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    float rotAngle = 0;
-    
+    double timeDiff = 0.0, startFrameTime = 0.0, endFrameTime = 0.0;
+    float rotAngle = 0.0f;
+    bool useBlinnPhong = false;
+
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
@@ -185,6 +261,10 @@ int main(void)
         // Clear the window's buffer (or clear the screen to our
         // background color)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        //update camera
+        glm::vec3 front = cameraRotation.getCameraFront();
+        cam.setDir(vec3(front.x, front.y, front.z));
 
         // create the view matrix from our camera data                                                                                                   
         //glm::mat4 M_view = glm::lookAt( m_pos, m_pos - m_W, m_V );
@@ -199,36 +279,100 @@ int main(void)
         glm::mat4 M_view = glm::lookAt(camPos, camPos - camW, camV);
 
         /* Render your objects here */
-        shader.activate();
 
-        modelTransform = glm::mat4(1.0f);
-        modelTransform = glm::rotate(modelTransform, rotAngle, glm::vec3(0,1,0));
         rotAngle += 0.01;
         if (rotAngle > 2.0*3.14159) rotAngle = 0.0f;
 
-        modelNormal = glm::transpose(glm::inverse(modelTransform));
+        sivelab::GLSLObject& activeShader = useBlinnPhong ? shaderBlinnPhong : shaderLambertian;
 
-        glUniformMatrix4fv(projMatrixID, 1, GL_FALSE, glm::value_ptr( M_perspective ));
-        glUniformMatrix4fv(viewMatrixID, 1, GL_FALSE, glm::value_ptr( M_view )); 
-        glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, glm::value_ptr( modelTransform ));
-        glUniformMatrix4fv(normalMatrixID, 1, GL_FALSE, glm::value_ptr( modelNormal ));
+        GLuint u_proj = useBlinnPhong ? bp_proj : lamb_proj;
+        GLuint u_view = useBlinnPhong ? bp_view : lamb_view;
+        GLuint u_model = useBlinnPhong ? bp_model : lamb_model;
+        GLuint u_normal = useBlinnPhong ? bp_normal : lamb_normal;
+        GLuint u_Ia = useBlinnPhong ? bp_Ia : lamb_Ia;
+        GLuint u_ka = useBlinnPhong ? bp_ka : 0;
+        GLuint u_kd = useBlinnPhong ? bp_kd : lamb_kd;
+        GLuint u_ks = useBlinnPhong ? bp_ks : 0;
+        GLuint u_phong = useBlinnPhong ? bp_phong : 0;
+        GLuint u_lpos = useBlinnPhong ? bp_lpos : lamb_lpos;
+        GLuint u_lint = useBlinnPhong ? bp_lint : lamb_lint;
+    
+        activeShader.activate();
 
-        glUniform3fv(diffuseComponentID, 1, glm::value_ptr( diffuseComponent ));
-        glUniform4fv(lightPosWorldID, 1, glm::value_ptr( lightPosWorld ));
+        glUniformMatrix4fv(u_proj, 1, GL_FALSE, glm::value_ptr(M_perspective));
+        glUniformMatrix4fv(u_view, 1, GL_FALSE, glm::value_ptr(M_view));
 
-        glUniform3f(IaID, 0.2f, 0.2f, 0.2f);
-        glUniform3f(kaID, 1.0f, 1.0f, 1.0f);
-        glUniform3f(kdID, 1.0f, 0.0f, 0.5f);
-        glUniform3f(ksID, 1.0f, 1.0f, 1.0f);
-        glUniform1f(phongExpID, 32.0f);
-        glUniform3f(lightPosID, 0.0f, 0.0f, 10.0f);
-        glUniform3f(lightIntensityID, 1.0f, 1.0f, 1.0f);
 
-        glBindVertexArray(m_VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        glUniform3f(u_Ia, 0.2f, 0.2f, 0.2f);
+        glUniform3f(u_ka, 1.0f, 1.0f, 1.0f);
+        glUniform3f(u_ks, 1.0f, 1.0f, 1.0f);
+        glUniform1f(u_phong, 32.0f);
+        glUniform3f(u_lint, 1.0f, 1.0f, 1.0f);
+
+        if (useBlinnPhong) {
+            glUniform3f(bp_lpos, 0.0f, 5.0f, 10.0f);
+        } else {
+            glUniform4f(lamb_lpos, 0.0f, 5.0f, 10.0f, 1.0f);
+        }
+
+        //obj
+        glm::mat4 objTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f));
+        objTransform = glm::rotate(objTransform, rotAngle, glm::vec3(0, 1, 0));
+        glm::mat4 objNormal = glm::transpose(glm::inverse(objTransform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(objTransform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(objNormal));
+        glUniform3f(u_kd, 0.8f, 0.0f, 0.5f);
+
+        glBindVertexArray(objVAO);
+        glDrawElements(GL_TRIANGLES, model.getNumberOfIndices(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+        
+
+        //sphere 1
+        glm::mat4 sphereTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+        sphereTransform = glm::rotate(sphereTransform, rotAngle, glm::vec3(0, 1, 0));
+        glm::mat4 sphereNormal = glm::transpose(glm::inverse(sphereTransform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphereTransform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphereNormal));
+        glUniform3f(u_kd, 0.0f, 0.0f, 1.0f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
 
-        shader.deactivate();
+        //sphere 2
+        glm::mat4 sphere2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -14.0f, 0.0f));
+        sphere2Transform = glm::scale(sphere2Transform, glm::vec3(10.0f, 10.0f, 10.0f));
+        glm::mat4 sphere2RS = glm::scale(glm::mat4(1.0f), glm::vec3(10.0f, 10.0f, 10.0f));
+        glm::mat4 sphere2Normal = glm::transpose(glm::inverse(sphere2RS));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphere2Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphere2Normal));
+        glUniform3f(u_kd, 1.0f, 0.0f, 0.0f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+        //sphere 3
+        glm::mat4 sphere3Transform = glm::rotate(glm::mat4(1.0f), rotAngle, glm::vec3(0, 1, 0));
+        sphere3Transform = glm::translate(sphere3Transform, glm::vec3(0.0f, 0.0f, -4.0f));
+        glm::mat4 sphere3Normal = glm::transpose(glm::inverse(sphere3Transform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphere3Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphere3Normal));
+        glUniform3f(u_kd, 0.0f, 1.0f, 0.0f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+
+
+        activeShader.deactivate();
 
         // Swap the front and back buffers
         glfwSwapBuffers(window);
@@ -236,20 +380,20 @@ int main(void)
         /* Poll for and process events */
         glfwPollEvents();
 
-        float moveRatePerFrame = 0.05;
+        float moveRatePerFrame = 0.05f;
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            cam.setPos(cam.getPos() + -cam.getW() * moveRatePerFrame);
-        }
-        else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            cam.setPos(cam.getPos() - cam.getU() * moveRatePerFrame);
-        }
-        else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            cam.setPos(cam.getPos() + cam.getW() * moveRatePerFrame);
-        }
-        else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            cam.setPos(cam.getPos() + cam.getU() * moveRatePerFrame);
-        }
+            cam.setPos(cam.getPos() + -cam.getW() * moveRatePerFrame);        }
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() - cam.getU() * moveRatePerFrame);        }
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() + cam.getW() * moveRatePerFrame);        }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            cam.setPos(cam.getPos() + cam.getU() * moveRatePerFrame);        }
+
+        //bind blinn phong and lambertian keys
+        if(glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) useBlinnPhong = true;
+        if(glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) useBlinnPhong = false;
 
         if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
             std::cout << "fps: " << 1.0 / timeDiff << std::endl;
@@ -262,6 +406,13 @@ int main(void)
             glfwSetWindowShouldClose(window, 1);
         }
     }
+
+    glDeleteBuffers(1, &objVBO);
+    glDeleteBuffers(1, &objIBO);
+    glDeleteVertexArrays(1, &objVAO);
+    glDeleteBuffers(1, &sphereVBO);
+    glDeleteBuffers(1, &sphereIBO);
+    glDeleteVertexArrays(1, &sphereVAO);
   
     glfwTerminate();
     return 0;

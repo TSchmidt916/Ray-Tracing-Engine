@@ -20,4 +20,6 @@ class perspectiveCamera : public camera
         R = ray(pos, unit_vector(dir));
         return R;
     }
+
+    
 };

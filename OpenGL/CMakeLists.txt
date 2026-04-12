@@ -3,6 +3,7 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 add_executable (glfwExample
   glfwExample.cpp 
   GLSL.cpp GLSL.h
+  ../src/model_obj.cpp
 )
 
 target_link_libraries (glfwExample PRIVATE GLEW::GLEW)

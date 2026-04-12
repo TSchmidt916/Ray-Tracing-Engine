@@ -23,6 +23,7 @@ float tmax = std::numeric_limits<float>::infinity();
 
 int main(int argc, char *argv[])
 {
+    /*
     SceneContainer parsedScene;
 
     std::shared_ptr<ISceneLoader> loader = std::make_shared<SceneLoader>(parsedScene);
@@ -126,7 +127,6 @@ int main(int argc, char *argv[])
 
     std::cout << "Rendered to: " << outputFile << "\n";
 
-    /*
     GraphicsArgs args;
     args.process(argc, argv);
 
@@ -330,4 +330,17 @@ int main(int argc, char *argv[])
     sc4.generateScene();
     return 0;
     */
+
+    Framebuffer fb12(1000, 1000);
+    perspectiveCamera cam10(1000, 1000, vec3(0, 0, 12), vec3(0, 0, -1), 1.0, 0.5f, 0.5f);
+    hittableList world5;
+    auto bpMat3 = std::make_shared<blinnPhong>(vec3(1.0f, 0.0f, 0.0f));
+    auto bpMat4 = std::make_shared<blinnPhong>(vec3(0.0f, 0.0f, 1.0f));
+    world5.add(std::make_shared<sphere>(vec3(0, 0, 0), 1.0f, bpMat4));
+    world5.add(std::make_shared<sphere>(vec3(0, -11, 0), 10.0f, bpMat3));
+    light light5(vec3(0, 5, 10), vec3(1.0f, 1.0f, 1.0f));
+    scene sc5(&fb12, &cam10, &world5, &light5, "fbMainComparison.png", vec3(0.5, 0.5, 0.5));
+    sc5.generateScene();
+    return 0;
+    
 }
