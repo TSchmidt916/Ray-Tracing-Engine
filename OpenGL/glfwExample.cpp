@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <vector>
+#include <png++/png.hpp>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -150,6 +151,36 @@ int main(void)
     glm::mat4 M_ortho = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far);
     glm::mat4 projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0f, 10.0f);
 
+    //Textures
+    std::string texFilename = "../Textures/textureAtlas.png";
+    png::image<png::rgb_pixel> texPNGImage;
+    texPNGImage.read(texFilename);
+
+    int pngWidth = texPNGImage.get_width();
+    int pngHeight = texPNGImage.get_height();
+
+    std::vector<float> texData(pngHeight * pngWidth * 3);
+
+    size_t idx = 0;
+    for (size_t row = 0; row < pngHeight; ++row) {
+        for (size_t col = 0; col < pngWidth; ++col) {
+            png::rgb_pixel pixel = texPNGImage[pngHeight - row - 1][col];
+            texData[idx++] = pixel.red / 255.0f;
+            texData[idx++] = pixel.green /255.0f;
+            texData[idx++] = pixel.blue / 255.0f;
+        }
+    }
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,  pngWidth, pngHeight, 0, GL_RGB, GL_FLOAT, texData.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     //obj model
     ModelOBJ model;
     if (!model.import("../OBJs/Madara_Uchiha.obj")) {
@@ -208,15 +239,55 @@ int main(void)
 
     glBindVertexArray(0);
 
-    //shaders
+    //Triangles
+    std::vector<float> triangle_VertexBuffer{
+        //square 1
+        -0.5f, -0.5f, 0.0f,     0.0f, 0.0f, 1.0f,   0.5f, 0.0f,
+        0.5f, -0.5f, 0.0f,      0.0f, 0.0f, 1.0f,   1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f,       0.0f, 0.0f, 1.0f,   1.0f, 0.5f,
+
+        -0.5f, -0.5f, 0.0f,     0.0f, 0.0f, 1.0f,   0.5f, 0.0f,
+        0.5f, 0.5f, 0.0f,       0.0f, 0.0f, 1.0f,   1.0f, 0.5f,
+        -0.5f, 0.5f, 0.0f,      0.0f, 0.0f, 1.0f,   0.5f, 0.5f,
+
+        //square 2
+        -0.5f, -0.5f, -1.0f,    0.0f, 0.0f, 1.0f,   0.0f, 0.0f,
+        -0.5f, -0.5f, 0.0f,     0.0f, 0.0f, 1.0f,   0.5f, 0.0f,
+        -0.5f, 0.5f, 0.0f,      0.0f, 0.0f, 1.0f,   0.5f, 0.5f,
+
+        -0.5f, -0.5f, -1.0f,    0.0f, 0.0f, 1.0f,   0.0f, 0.0f,
+        -0.5f, 0.5f, 0.0f,      0.0f, 0.0f, 1.0f,   0.5f, 0.5f,
+        -0.5f, 0.5f, -1.0f,      0.0f, 0.0f, 1.0f,   0.0f, 0.5f,
+    };
+
+    int numBytes = triangle_VertexBuffer.size() * sizeof(float);
+
+    GLuint triangleVBO, triangleVAO;
+    glGenVertexArrays(1, &triangleVAO);
+    glBindVertexArray(triangleVAO);
+
+    glGenBuffers(1, &triangleVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, triangleVBO);
+    glBufferData(GL_ARRAY_BUFFER, numBytes, triangle_VertexBuffer.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), 0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (void*)12);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (void*)24);
+
+    glBindVertexArray(0);
+
+    //Shaders
     sivelab::GLSLObject shaderLambertian, shaderBlinnPhong;
 
     shaderLambertian.addShader("vertexShader_PrepForPerFragment.glsl", sivelab::GLSLObject::VERTEX_SHADER);
     shaderLambertian.addShader("fragmentShader_Lambertian.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
     shaderLambertian.createProgram();
 
-    shaderBlinnPhong.addShader("vertexShader_blinnPhong.glsl", sivelab::GLSLObject::VERTEX_SHADER);
-    shaderBlinnPhong.addShader("fragmentShader_blinnPhong.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    shaderBlinnPhong.addShader("vertexShader_blinnPhongTex.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    shaderBlinnPhong.addShader("fragmentShader_blinnPhongTex.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
     shaderBlinnPhong.createProgram();
 
     GLuint lamb_proj = shaderLambertian.createUniform("projMatrix");
@@ -239,6 +310,7 @@ int main(void)
     GLuint bp_phong = shaderBlinnPhong.createUniform("phongExp");
     GLuint bp_lpos = shaderBlinnPhong.createUniform("light.position");
     GLuint bp_lint = shaderBlinnPhong.createUniform("light.intensity");
+    GLuint bp_texUnit = shaderBlinnPhong.createUniform("texUnit");
 
     perspectiveCamera cam(winWidth, winHeight, vec3(0, 0, 5), vec3(0, 0, -1), 1.0f, 10.0f, 10.0f);
 
@@ -344,7 +416,7 @@ int main(void)
         glBindVertexArray(0);
 
         //sphere 2
-        glm::mat4 sphere2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -14.0f, 0.0f));
+        glm::mat4 sphere2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -11.0f, 0.0f));
         sphere2Transform = glm::scale(sphere2Transform, glm::vec3(10.0f, 10.0f, 10.0f));
         glm::mat4 sphere2RS = glm::scale(glm::mat4(1.0f), glm::vec3(10.0f, 10.0f, 10.0f));
         glm::mat4 sphere2Normal = glm::transpose(glm::inverse(sphere2RS));
@@ -370,7 +442,22 @@ int main(void)
         glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
 
+        //Square
+        glm::mat4 squareTransform = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, 0.0f));
+        glm::mat4 squareNormal = glm::transpose(glm::inverse(squareTransform));
 
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(squareTransform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(squareNormal));
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glUniform1i(bp_texUnit, 0);
+
+        glBindVertexArray(triangleVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 12);
+        glBindVertexArray(0);
+
+        glBindTexture(GL_TEXTURE_2D, 0);
 
         activeShader.deactivate();
 
@@ -413,6 +500,8 @@ int main(void)
     glDeleteBuffers(1, &sphereVBO);
     glDeleteBuffers(1, &sphereIBO);
     glDeleteVertexArrays(1, &sphereVAO);
+    glDeleteBuffers(1, &triangleVBO);
+    glDeleteVertexArrays(1, & triangleVAO);
   
     glfwTerminate();
     return 0;
