@@ -159,3 +159,9 @@ L: switch to Lambertian shaders
 ### Visual Differences
 There are various the ray tracer and OpenGL.
 one of the main ones being that OpenGL currently does not create any shadows.Depending on the sphere you create in OpenGL you can see the triangle faces close up which is not present in the ray tracer. OpenGL is also real time meaning you can move around and see real time transformations where as the ray tracer is static. The colors are relatively the same but may be a little different depending on how the values are being computed.
+
+GLFW Example:
+<img width="1006" height="1002" alt="GLFWComparison" src="https://github.com/user-attachments/assets/d429e7e8-7852-4c22-89a4-2ba02df41bb1" />
+
+Ray Tracer Example:
+<img width="1000" height="1000" alt="fbMainComparison" src="https://github.com/user-attachments/assets/47ea05b3-2a36-4264-b348-2ac178757508" />
