@@ -18,6 +18,50 @@
 #include "mouseControls.cpp"
 #include "../src/model_obj.h"
 
+//Ocean stuff
+struct GridVertex {
+    float position[3];
+    float normal[3];
+};
+
+std::vector<GridVertex> gridVerts;
+std::vector<unsigned int> gridIndices;
+
+void generateGrid(int width, int depth, float spacing) {
+    gridVerts.clear();
+    gridIndices.clear();
+
+    for (int z = 0; z <= depth; z++) {
+        for (int x = 0; x <= width; x++) {
+            GridVertex v;
+            v.position[0] = (x - width/2.0f) * spacing;
+            v.position[1] = 0.0f;
+            v.position[2] = (z - depth/2.0f) * spacing;
+            v.normal[0] = 0.0f;
+            v.normal[1] = 1.0f;
+            v.normal[2] = 0.0f;
+            gridVerts.push_back(v);
+        }
+    }
+
+    for (int z = 0; z < depth; z++) {
+        for (int x = 0; x < width; x++) {
+            int wave_top_left = z * (width + 1) + x;
+            int wave_top_right = wave_top_left + 1;
+            int wave_bottom_left = wave_top_left + (width + 1);
+            int wave_bottom_right = wave_bottom_left + 1;
+            
+            gridIndices.push_back(wave_top_left);
+            gridIndices.push_back(wave_bottom_left);
+            gridIndices.push_back(wave_top_right);
+
+            gridIndices.push_back(wave_top_right);
+            gridIndices.push_back(wave_bottom_left);
+            gridIndices.push_back(wave_bottom_right);
+        }
+    }
+}
+
 //sphere stuff that should be moved
 struct SphereVertex {
     float position[3];
@@ -127,7 +171,7 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.5f, 0.5f, 0.5f, 1.0);
+    glClearColor(0.53f, 0.81f, 0.92f, 1.0);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
@@ -183,7 +227,7 @@ int main(void)
 
     //obj model
     ModelOBJ model;
-    if (!model.import("../OBJs/Madara_Uchiha.obj")) {
+    if (!model.import("../OBJs/ship.obj")) {
         std::cerr << "Failed to load OBJ file!" << std::endl;
         glfwTerminate();
         return -1;
@@ -239,6 +283,31 @@ int main(void)
 
     glBindVertexArray(0);
 
+    //ocean generation
+    generateGrid(200, 200, 0.1f);
+
+    GLuint gridVBO, gridIBO, gridVAO;
+    glGenVertexArrays(1, &gridVAO);
+    glBindVertexArray(gridVAO);
+
+    glGenBuffers(1, &gridVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
+    glBufferData(GL_ARRAY_BUFFER, gridVerts.size() * sizeof(GridVertex), gridVerts.data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &gridIBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gridIBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, gridIndices.size() * sizeof(unsigned int), gridIndices.data(), GL_STATIC_DRAW);
+
+    int gridStride = sizeof(GridVertex);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, gridStride, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, gridStride, (void*)12);
+
+    glBindVertexArray(0);
+
+
+
     //Triangles
     std::vector<float> triangle_VertexBuffer{
         //square 1
@@ -280,7 +349,7 @@ int main(void)
     glBindVertexArray(0);
 
     //Shaders
-    sivelab::GLSLObject shaderLambertian, shaderBlinnPhong;
+    sivelab::GLSLObject shaderLambertian, shaderBlinnPhong, shaderOcean;
 
     shaderLambertian.addShader("vertexShader_PrepForPerFragment.glsl", sivelab::GLSLObject::VERTEX_SHADER);
     shaderLambertian.addShader("fragmentShader_Lambertian.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
@@ -289,6 +358,10 @@ int main(void)
     shaderBlinnPhong.addShader("vertexShader_blinnPhongTex.glsl", sivelab::GLSLObject::VERTEX_SHADER);
     shaderBlinnPhong.addShader("fragmentShader_blinnPhongTex.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
     shaderBlinnPhong.createProgram();
+
+    shaderOcean.addShader("vertexShader_ocean.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    shaderOcean.addShader("fragmentShader_ocean.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    shaderOcean.createProgram();
 
     GLuint lamb_proj = shaderLambertian.createUniform("projMatrix");
     GLuint lamb_view = shaderLambertian.createUniform("viewMatrix");
@@ -311,6 +384,11 @@ int main(void)
     GLuint bp_lpos = shaderBlinnPhong.createUniform("light.position");
     GLuint bp_lint = shaderBlinnPhong.createUniform("light.intensity");
     GLuint bp_texUnit = shaderBlinnPhong.createUniform("texUnit");
+
+    GLuint ocean_proj = shaderOcean.createUniform("projMatrix");
+    GLuint ocean_view = shaderOcean.createUniform("viewMatrix");
+    GLuint ocean_model = shaderOcean.createUniform("modelMatrix");
+    GLuint ocean_time = shaderOcean.createUniform("time");
 
     perspectiveCamera cam(winWidth, winHeight, vec3(0, 0, 5), vec3(0, 0, -1), 1.0f, 10.0f, 10.0f);
 
@@ -374,8 +452,6 @@ int main(void)
         glUniformMatrix4fv(u_proj, 1, GL_FALSE, glm::value_ptr(M_perspective));
         glUniformMatrix4fv(u_view, 1, GL_FALSE, glm::value_ptr(M_view));
 
-
-
         glUniform3f(u_Ia, 0.2f, 0.2f, 0.2f);
         glUniform3f(u_ka, 1.0f, 1.0f, 1.0f);
         glUniform3f(u_ks, 1.0f, 1.0f, 1.0f);
@@ -390,12 +466,11 @@ int main(void)
 
         //obj
         glm::mat4 objTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f));
-        objTransform = glm::rotate(objTransform, rotAngle, glm::vec3(0, 1, 0));
         glm::mat4 objNormal = glm::transpose(glm::inverse(objTransform));
 
         glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(objTransform));
         glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(objNormal));
-        glUniform3f(u_kd, 0.8f, 0.0f, 0.5f);
+        glUniform3f(u_kd, 0.48f, 0.33f, 0.18f);
 
         glBindVertexArray(objVAO);
         glDrawElements(GL_TRIANGLES, model.getNumberOfIndices(), GL_UNSIGNED_INT, (void*)0);
@@ -451,7 +526,8 @@ int main(void)
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texID);
-        glUniform1i(bp_texUnit, 0);
+        if (useBlinnPhong)
+            glUniform1i(bp_texUnit, 0);
 
         glBindVertexArray(triangleVAO);
         glDrawArrays(GL_TRIANGLES, 0, 12);
@@ -460,6 +536,20 @@ int main(void)
         glBindTexture(GL_TEXTURE_2D, 0);
 
         activeShader.deactivate();
+
+        //Ocean
+        shaderOcean.activate();
+        glUniformMatrix4fv(ocean_proj, 1, GL_FALSE, glm::value_ptr(M_perspective));
+        glUniformMatrix4fv(ocean_view, 1, GL_FALSE, glm::value_ptr(M_view));
+
+        glm::mat4 oceanTransform = glm::mat4(1.0f);
+        glUniformMatrix4fv(ocean_model, 1, GL_FALSE, glm::value_ptr(oceanTransform));
+        glUniform1f(ocean_time, (float)glfwGetTime());
+
+        glBindVertexArray(gridVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)gridIndices.size(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+        shaderOcean.deactivate();
 
         // Swap the front and back buffers
         glfwSwapBuffers(window);
@@ -502,6 +592,9 @@ int main(void)
     glDeleteVertexArrays(1, &sphereVAO);
     glDeleteBuffers(1, &triangleVBO);
     glDeleteVertexArrays(1, & triangleVAO);
+    glDeleteBuffers(1, &gridVBO);
+    glDeleteBuffers(1, &gridIBO);
+    glDeleteVertexArrays(1, &gridVAO);
   
     glfwTerminate();
     return 0;
