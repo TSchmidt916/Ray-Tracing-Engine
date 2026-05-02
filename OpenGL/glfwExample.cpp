@@ -171,7 +171,7 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.53f, 0.81f, 0.92f, 1.0);
+    glClearColor(0.99f, 0.57f, 0.28f, 1.0);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
@@ -401,12 +401,97 @@ int main(void)
     float rotAngle = 0.0f;
     bool useBlinnPhong = false;
 
+    // =====================================================================
+    // FBO SETUP: Create framebuffer with color texture and depth renderbuffer
+    // =====================================================================
+    GLuint fboID, fboTextureID, fboRBOID;
+
+    // Generate FBO
+    glGenFramebuffers(1, &fboID);
+    glBindFramebuffer(GL_FRAMEBUFFER, fboID);
+
+    // Create color texture attachment
+    glGenTextures(1, &fboTextureID);
+    glBindTexture(GL_TEXTURE_2D, fboTextureID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fb_width, fb_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTextureID, 0);
+
+    // Create depth renderbuffer
+    glGenRenderbuffers(1, &fboRBOID);
+    glBindRenderbuffer(GL_RENDERBUFFER, fboRBOID);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, fb_width, fb_height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, fboRBOID);
+
+    // Check FBO completeness
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Framebuffer is not complete!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+    // =====================================================================
+    // SCREEN-FILLING QUAD: For post-processing pass
+    // =====================================================================
+    GLuint screenQuadVBO, screenQuadVAO;
+  
+    // Screen quad vertices: (position xy, texcoord xy)
+    std::vector<float> screenQuadVertices = {
+    // positions        // texCoords
+    -1.0f,  1.0f,        0.0f, 1.0f,  // Top Left (V0)
+    -1.0f, -1.0f,        0.0f, 0.0f,  // Bottom Left (V1)
+    1.0f,  1.0f,        1.0f, 1.0f,  // Top Right (V2)
+    1.0f, -1.0f,        1.0f, 0.0f   // Bottom Right (V3)
+    };
+
+    glGenBuffers(1, &screenQuadVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, screenQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, screenQuadVertices.size() * sizeof(float), screenQuadVertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glGenVertexArrays(1, &screenQuadVAO);
+    glBindVertexArray(screenQuadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, screenQuadVBO);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (const GLvoid *)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (const GLvoid *)(2 * sizeof(float)));
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // =====================================================================
+    // GAMMA CORRECTION POST-PROCESSING SHADER
+    // =====================================================================
+    sivelab::GLSLObject gammaShader;
+    gammaShader.addShader("vertexShader_screenQuad.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    gammaShader.addShader("fragmentShader_gammaCorrection.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    gammaShader.createProgram();
+
+    GLuint gammaTextureID = gammaShader.createUniform("fboTexture");
+    GLuint gammaGammaID = gammaShader.createUniform("gamma");
+
+    float gammaValue = 2.2f;  // Standard gamma value    
+
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
         endFrameTime = glfwGetTime();
         timeDiff = endFrameTime - startFrameTime;
         startFrameTime = glfwGetTime();
+
+        // Get current framebuffer size for FBO viewport
+        glfwGetFramebufferSize(window, &fb_width, &fb_height);
+
+        // =====================================================================
+        // PASS 1: Render scene to FBO
+        // =====================================================================
+        glEnable(GL_DEPTH_TEST);
+        glBindFramebuffer(GL_FRAMEBUFFER, fboID);  // <<<<<-----------
+        glViewport(0, 0, fb_width, fb_height);
 
         // Clear the window's buffer (or clear the screen to our
         // background color)
@@ -465,7 +550,8 @@ int main(void)
         }
 
         //obj
-        glm::mat4 objTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f));
+        glm::mat4 objTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.75f, 0.0f));
+        objTransform = glm::scale(objTransform, glm::vec3(3.0f, 3.0f, 3.0f));
         glm::mat4 objNormal = glm::transpose(glm::inverse(objTransform));
 
         glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(objTransform));
@@ -476,20 +562,20 @@ int main(void)
         glDrawElements(GL_TRIANGLES, model.getNumberOfIndices(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
         
-
+        /*
         //sphere 1
-        glm::mat4 sphereTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-        sphereTransform = glm::rotate(sphereTransform, rotAngle, glm::vec3(0, 1, 0));
+        glm::mat4 sphereTransform = glm::translate(glm::mat4(1.0f), glm::vec3(10.0f, 5.0f, 0.0f));
+        sphereTransform = glm::scale(sphereTransform, glm::vec3(3.0f, 3.0f, 3.0f));
         glm::mat4 sphereNormal = glm::transpose(glm::inverse(sphereTransform));
 
         glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphereTransform));
         glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphereNormal));
-        glUniform3f(u_kd, 0.0f, 0.0f, 1.0f);
+        glUniform3f(u_kd, 0.96f, 0.91f, 0.61f);
 
         glBindVertexArray(sphereVAO);
         glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
-
+        
         //sphere 2
         glm::mat4 sphere2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -11.0f, 0.0f));
         sphere2Transform = glm::scale(sphere2Transform, glm::vec3(10.0f, 10.0f, 10.0f));
@@ -534,6 +620,7 @@ int main(void)
         glBindVertexArray(0);
 
         glBindTexture(GL_TEXTURE_2D, 0);
+        */
 
         activeShader.deactivate();
 
@@ -550,6 +637,37 @@ int main(void)
         glDrawElements(GL_TRIANGLES, (GLsizei)gridIndices.size(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
         shaderOcean.deactivate();
+
+        // =====================================================================
+        // PASS 2: Render FBO texture to back buffer with gamma correction
+        // =====================================================================
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);  // Bind default framebuffer (back buffer)
+        glViewport(0, 0, fb_width, fb_height);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+        // Disable depth testing for the post-processing pass to ensure the
+        // screen quad renders completely without depth conflicts with the
+        // depth buffer from Pass 1 scene rendering
+        glDisable(GL_DEPTH_TEST);
+    
+        gammaShader.activate();
+
+        // Bind FBO color texture to texture unit 0
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fboTextureID);
+        glUniform1i(gammaTextureID, 0);
+
+        // Set gamma value
+        glUniform1f(gammaGammaID, gammaValue);
+
+        // Draw screen-filling quad
+        glBindVertexArray(screenQuadVAO);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        gammaShader.deactivate();
 
         // Swap the front and back buffers
         glfwSwapBuffers(window);

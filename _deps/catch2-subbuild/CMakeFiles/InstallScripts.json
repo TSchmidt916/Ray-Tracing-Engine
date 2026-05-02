@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/trevor/Documents/GitHub/Ray-Tracing-Engine/_deps/catch2-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
