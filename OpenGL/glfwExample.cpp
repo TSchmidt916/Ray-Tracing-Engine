@@ -171,7 +171,7 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.99f, 0.57f, 0.28f, 1.0);
+    glClearColor(0.89f, 0.62f, 0.67f, 1.0);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
@@ -261,7 +261,7 @@ int main(void)
     glBindVertexArray(0);
 
     //sphere generation
-    generateSphere(1.0f, 32, 32);
+    generateSphere(0.1f, 32, 32);
 
     GLuint sphereVBO, sphereIBO, sphereVAO;
     glGenVertexArrays(1, &sphereVAO);
@@ -284,7 +284,7 @@ int main(void)
     glBindVertexArray(0);
 
     //ocean generation
-    generateGrid(200, 200, 0.1f);
+    generateGrid(1000, 1000, 0.1f);
 
     GLuint gridVBO, gridIBO, gridVAO;
     glGenVertexArrays(1, &gridVAO);
@@ -549,17 +549,69 @@ int main(void)
             glUniform4f(lamb_lpos, 0.0f, 5.0f, 10.0f, 1.0f);
         }
 
-        //obj
-        glm::mat4 objTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.75f, 0.0f));
-        objTransform = glm::scale(objTransform, glm::vec3(3.0f, 3.0f, 3.0f));
-        glm::mat4 objNormal = glm::transpose(glm::inverse(objTransform));
+        //obj 1
+        glm::mat4 obj1Transform = glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 0.75f, 0.0f));
+        obj1Transform = glm::scale(obj1Transform, glm::vec3(3.0f, 3.0f, 3.0f));
+        glm::mat4 obj1Normal = glm::transpose(glm::inverse(obj1Transform));
 
-        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(objTransform));
-        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(objNormal));
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(obj1Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(obj1Normal));
         glUniform3f(u_kd, 0.48f, 0.33f, 0.18f);
 
         glBindVertexArray(objVAO);
         glDrawElements(GL_TRIANGLES, model.getNumberOfIndices(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+        //obj 2
+        glm::mat4 obj2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(-2.5f, 0.75f, 0.0f));
+        obj2Transform = glm::scale(obj2Transform, glm::vec3(3.0f, 3.0f, 3.0f));
+        glm::mat4 obj2Normal = glm::transpose(glm::inverse(obj2Transform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(obj2Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(obj2Normal));
+        glUniform3f(u_kd, 0.58f, 0.43f, 0.28f);
+
+        glBindVertexArray(objVAO);
+        glDrawElements(GL_TRIANGLES, model.getNumberOfIndices(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+        //cannonball 1
+        glm::mat4 sphere1Transform = glm::rotate(glm::mat4(1.0f), rotAngle, glm::vec3(0, 1, 0));
+        sphere1Transform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.8f, 0.0f));
+        glm::mat4 sphere1Normal = glm::transpose(glm::inverse(sphere1Transform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphere1Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphere1Normal));
+        glUniform3f(u_kd, 0.2f, 0.2f, 0.2f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+        //cannonball 2
+        glm::mat4 sphere2Transform = glm::rotate(glm::mat4(1.0f), rotAngle, glm::vec3(0, 1, 0));
+        sphere2Transform = glm::translate(glm::mat4(1.0f), glm::vec3(1.2f, 0.6f, -1.0f));
+        glm::mat4 sphere2Normal = glm::transpose(glm::inverse(sphere2Transform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphere2Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphere2Normal));
+        glUniform3f(u_kd, 0.2f, 0.2f, 0.2f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
+        glBindVertexArray(0);
+
+        //cannonball 3
+        glm::mat4 sphere3Transform = glm::rotate(glm::mat4(1.0f), rotAngle, glm::vec3(0, 1, 0));
+        sphere3Transform = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.75f, 1.0f));
+        glm::mat4 sphere3Normal = glm::transpose(glm::inverse(sphere3Transform));
+
+        glUniformMatrix4fv(u_model, 1, GL_FALSE, glm::value_ptr(sphere3Transform));
+        glUniformMatrix4fv(u_normal, 1, GL_FALSE, glm::value_ptr(sphere3Normal));
+        glUniform3f(u_kd, 0.2f, 0.2f, 0.2f);
+
+        glBindVertexArray(sphereVAO);
+        glDrawElements(GL_TRIANGLES, (GLsizei)sphereIndices.size(), GL_UNSIGNED_INT, (void*)0);
         glBindVertexArray(0);
         
         /*
